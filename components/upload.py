@@ -18,6 +18,7 @@ def upload_section():
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
+        df.columns = [str(c) for c in df.columns]   # e.g. year headers 2021 -> "2021"
         return df
     except Exception as e:
         st.error(f"Could not read file: {e}")

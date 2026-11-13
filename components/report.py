@@ -5,6 +5,7 @@ Generates a professional multi-section PDF using ReportLab.
 
 import io
 import datetime
+from xml.sax.saxutils import escape
 import numpy as np
 import pandas as pd
 
@@ -17,7 +18,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     HRFlowable, KeepTogether
 )
-from reportlab.platypus import PageBreak
+from reportlab.platypus import PageBreak, CondPageBreak
 from reportlab.lib.colors import HexColor
 
 
@@ -36,13 +37,32 @@ MUTED    = HexColor("#94A3B8")
 WHITE    = HexColor("#FFFFFF")
 
 
-def _num_cols(df): return df.select_dtypes(include=np.number).columns.tolist()
-def _cat_cols(df): return df.select_dtypes(include=["object","category"]).columns.tolist()
+from components.utils import get_num_cols, get_cat_cols
+
+def _num_cols(df): return get_num_cols(df)
+def _cat_cols(df): return get_cat_cols(df)
 def _fmt(v):
     if abs(v)>=1_000_000: return f"{v/1_000_000:.2f}M"
     if abs(v)>=1_000:     return f"{v/1_000:.1f}K"
     return f"{v:.2f}"
-
+def _w(widths, total=17 * cm):
+    """Turn widths like '5cm' into numbers and shrink them to fit the page."""
+    out = []
+    for w in widths:
+        if isinstance(w, str):
+            w = w.strip().lower()
+            if w.endswith("cm"):
+                out.append(float(w[:-2]) * cm)
+            elif w.endswith("%"):
+                out.append(float(w[:-1]) / 100 * total)
+            else:
+                out.append(float(w))
+        else:
+            out.append(float(w))
+    s = sum(out)
+    if s > total:
+        out = [x * total / s for x in out]
+    return out
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -54,13 +74,13 @@ def _make_styles():
 
     return {
         "title":    style("DV_Title",    fontSize=28, textColor=WHITE,
-                          fontName="Helvetica-Bold", spaceAfter=4, alignment=TA_LEFT),
+                          fontName="Helvetica-Bold", spaceAfter=4, alignment=TA_LEFT, leading=34),
         "subtitle": style("DV_Sub",      fontSize=13, textColor=MUTED,
                           fontName="Helvetica",      spaceAfter=16),
         "h1":       style("DV_H1",       fontSize=16, textColor=CYAN,
-                          fontName="Helvetica-Bold", spaceBefore=18, spaceAfter=8),
+                          fontName="Helvetica-Bold", spaceBefore=18, spaceAfter=8, leading=20),
         "h2":       style("DV_H2",       fontSize=12, textColor=WHITE,
-                          fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=6),
+                          fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=6, leading=15),
         "body":     style("DV_Body",     fontSize=9,  textColor=MUTED,
                           fontName="Helvetica",       spaceAfter=6, leading=14),
         "bullet":   style("DV_Bullet",   fontSize=9,  textColor=MUTED,
@@ -88,7 +108,7 @@ def _header_table(df, styles):
         Paragraph("DataVista AI", styles["title"]),
         Paragraph(f"Generated: {now}", styles["meta"]),
     ]]
-    t = Table(data, colWidths=["70%","30%"])
+    t = Table(data, colWidths=["62%","38%"])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0),(-1,-1), SURFACE),
         ("TOPPADDING",  (0,0),(-1,-1), 18),
@@ -103,20 +123,25 @@ def _header_table(df, styles):
 
 def _kpi_row(label_vals: list, styles):
     """A row of KPI boxes: [(label, value, color), ...]"""
+    n = len(label_vals)
+    size = 14 if n >= 6 else 18          # many boxes -> smaller numbers so they fit
     cells = [
-        [Paragraph(v, ParagraphStyle("kv", fontSize=18, fontName="Helvetica-Bold",
+        [Paragraph(v, ParagraphStyle("kv", fontSize=size, leading=size + 5,
+                                     fontName="Helvetica-Bold",
                                      textColor=c, spaceAfter=2)),
-         Paragraph(l, ParagraphStyle("kl", fontSize=8,  fontName="Helvetica",
-                                     textColor=MUTED))]
-        for l,v,c in label_vals
+         Paragraph(l, ParagraphStyle("kl", fontSize=8, leading=10,
+                                     fontName="Helvetica", textColor=MUTED))]
+        for l, v, c in label_vals
     ]
-    col_w = 18.5 / len(cells)
-    t = Table([cells], colWidths=[f"{col_w:.1f}cm"]*len(cells))
+    col_w = 18.5 / n
+    t = Table([cells], colWidths=_w([f"{col_w:.1f}cm"] * n))
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0),(-1,-1), CARD),
+        ("VALIGN",     (0,0),(-1,-1), "TOP"),
         ("TOPPADDING",  (0,0),(-1,-1), 12),
         ("BOTTOMPADDING",(0,0),(-1,-1), 12),
-        ("LEFTPADDING", (0,0),(-1,-1), 14),
+        ("LEFTPADDING", (0,0),(-1,-1), 8),
+        ("RIGHTPADDING",(0,0),(-1,-1), 4),
         ("GRID", (0,0),(-1,-1), 0.5, BORDER),
         ("ROUNDEDCORNERS", [4]),
     ]))
@@ -133,7 +158,7 @@ def _data_table(header: list, rows: list, styles, col_widths=None):
                      for c in row])
     n = len(header)
     cw = col_widths or [f"{18.5/n:.1f}cm"] * n
-    t  = Table(data, colWidths=cw, repeatRows=1)
+    t  = Table(data, colWidths=_w(cw), repeatRows=1)
     ts = [
         ("BACKGROUND",   (0,0),(-1,0),  HexColor("#162032")),
         ("BACKGROUND",   (0,1),(-1,-1), CARD),
@@ -194,7 +219,7 @@ def _section_quality(df, styles) -> list:
         miss = int(df[col].isnull().sum())
         miss_p = round(miss/total_rows*100,1) if total_rows else 0
         n_uniq = int(df[col].nunique())
-        status = "✓ Clean" if miss==0 else ("⚠ High" if miss_p>20 else "~ Low")
+        status = "Clean" if miss==0 else ("High" if miss_p>20 else "Low")
         rows.append([col, str(df[col].dtype), f"{miss} ({miss_p}%)", str(n_uniq), status])
 
     els = [
@@ -252,14 +277,16 @@ def _section_correlations(df, styles) -> list:
     upper = corr.where(np.triu(np.ones(corr.shape),k=1).astype(bool))
     pairs = upper.stack().reset_index()
     pairs.columns=["A","B","r"]
+    pairs = pairs.dropna(subset=["r"])
     pairs["abs"] = pairs["r"].abs()
     top = pairs.sort_values("abs",ascending=False).head(10)
 
     rows = []
-    for _,row in top.iterrows():
-        strength = "Strong" if row.abs>0.7 else "Moderate" if row.abs>0.4 else "Weak"
-        direction= "Positive ↗" if row.r>0 else "Negative ↘"
-        rows.append([row.A[:18], row.B[:18], str(row.r), strength, direction])
+    for _, row in top.iterrows():
+        a = abs(row["r"])
+        strength = "Strong" if a > 0.7 else "Moderate" if a > 0.4 else "Weak"
+        direction = "Positive" if row["r"] > 0 else "Negative"
+        rows.append([str(row["A"])[:18], str(row["B"])[:18], str(row["r"]), strength, direction])
 
     els = [
         Paragraph("4. Correlation Analysis", styles["h1"]),
@@ -296,25 +323,26 @@ def _section_decisions(decisions: dict, score: int, styles) -> list:
         Spacer(1, 10),
     ]
 
-    for section, label in [("actions","🔴 Immediate Actions"),
-                            ("risks","⚡ Risks"),
-                            ("watch","🟡 Watch List"),
-                            ("opportunities","✅ Opportunities")]:
+    for section, label in [("actions","Immediate Actions"),
+                            ("risks","Risks"),
+                            ("watch","Watch List"),
+                            ("opportunities","Opportunities")]:
         items = decisions.get(section, [])
         if not items:
             continue
+        els.append(CondPageBreak(3*cm))
         els.append(Paragraph(label, styles["h2"]))
         for item in items:
             pc = priority_color.get(item["priority"], MUTED)
-            els.append(Paragraph(
-                f"<font color='#{pc.hexval()[2:]}'>■</font>  <b>{item['title']}</b>",
-                ParagraphStyle("dc_title", fontSize=9, fontName="Helvetica-Bold",
-                               textColor=WHITE, spaceAfter=3, leftIndent=6)
-            ))
-            els.append(Paragraph(item["body"],
-                ParagraphStyle("dc_body", fontSize=8, fontName="Helvetica",
-                               textColor=MUTED, spaceAfter=8, leftIndent=18, leading=13)
-            ))
+            els.append(KeepTogether([
+                Paragraph(
+                    f"<font color='#{pc.hexval()[2:]}'>&bull;</font>  <b>{escape(str(item['title']))}</b>",
+                    ParagraphStyle("dc_title", fontSize=9, fontName="Helvetica-Bold",
+                                   textColor=WHITE, spaceAfter=3, leftIndent=6)),
+                Paragraph(escape(str(item["body"])),
+                    ParagraphStyle("dc_body", fontSize=8, fontName="Helvetica",
+                                   textColor=MUTED, spaceAfter=8, leftIndent=18, leading=13)),
+            ]))
         els.append(Spacer(1, 4))
 
     return els
@@ -366,19 +394,21 @@ def generate_pdf(df: pd.DataFrame, decisions: dict = None, score: int = 75) -> b
     # Sections
     story += _section_overview(df, styles)
     story.append(Spacer(1, 10))
-    story.append(PageBreak())
 
+    story.append(CondPageBreak(4*cm))
     story += _section_quality(df, styles)
     story.append(Spacer(1, 10))
 
+    story.append(CondPageBreak(4*cm))
     story += _section_stats(df, styles)
     story.append(Spacer(1, 10))
-    story.append(PageBreak())
 
+    story.append(CondPageBreak(4*cm))
     story += _section_correlations(df, styles)
     story.append(Spacer(1, 10))
 
     if decisions:
+        story.append(CondPageBreak(5*cm))
         story += _section_decisions(decisions, score, styles)
 
     doc.build(story, onFirstPage=_dark_canvas, onLaterPages=_dark_canvas)

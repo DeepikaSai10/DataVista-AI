@@ -443,8 +443,12 @@ def visualization_gallery(df: pd.DataFrame):
                          use_container_width=True):
                 st.session_state.active_chart = rec["chart"]
                 # Pre-fill columns from recommendation
-                if rec.get("x"): st.session_state.chart_x[rec["chart"]] = rec["x"]
-                if rec.get("y"): st.session_state.chart_y[rec["chart"]] = rec["y"]
+                if rec.get("x"):
+                    st.session_state.chart_x[rec["chart"]] = rec["x"]
+                    st.session_state[f"x_{rec['chart']}"] = rec["x"]   # sets the dropdown
+                if rec.get("y"):
+                    st.session_state.chart_y[rec["chart"]] = rec["y"]
+                    st.session_state[f"y_{rec['chart']}"] = rec["y"]   # sets the dropdown
                 if rec["chart"] not in st.session_state.chart_history:
                     st.session_state.chart_history.append(rec["chart"])
                 st.rerun()

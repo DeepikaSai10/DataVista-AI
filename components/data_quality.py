@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from components.utils import get_num_cols, get_cat_cols
 
 
 def data_quality_report(df: pd.DataFrame):
@@ -29,8 +30,8 @@ def data_quality_report(df: pd.DataFrame):
     duplicate_rows  = int(df.duplicated().sum())
     dup_pct         = round(duplicate_rows / total_rows * 100, 1) if total_rows else 0
 
-    num_cols   = df.select_dtypes(include=np.number).columns.tolist()
-    cat_cols   = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    num_cols   = get_num_cols(df)
+    cat_cols   = get_cat_cols(df)
     date_cols  = df.select_dtypes(include=["datetime64"]).columns.tolist()
 
     complete_cols = int((missing_per_col == 0).sum())

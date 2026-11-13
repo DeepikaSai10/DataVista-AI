@@ -14,7 +14,7 @@ def get_cat_cols(df: pd.DataFrame) -> list:
     nums = df.select_dtypes(include=np.number).columns
     binary = [c for c in nums if df[c].nunique(dropna=True) <= 2]
     return cats + binary
-    return cats + binary
+
 def assess_data(df: pd.DataFrame) -> dict:
     """Checks if a dataset is safe to chart. Returns a level and a list of issues.
     level: 'clean' | 'warning' | 'blocked'

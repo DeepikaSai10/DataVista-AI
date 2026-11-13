@@ -49,6 +49,8 @@ def _correlation_insights(df):
     upper = corr.where(np.triu(np.ones(corr.shape),k=1).astype(bool))
     pairs = upper.stack().reset_index()
     pairs.columns = ["col_a","col_b","r"]
+    pairs = pairs.dropna(subset=["r"])
+
     pairs["abs_r"] = pairs["r"].abs()
     pairs = pairs.sort_values("abs_r", ascending=False)
     findings = []
@@ -84,11 +86,15 @@ def _trend_insights(df):
     return findings
 
 
-def _categorical_insights(df):
-    cats = _cat_cols(df)
+def _categorical_insights(df, cols=None):
+    """cols=None -> first 4 categorical columns (used by the summary).
+    Pass a list of columns to analyse those instead."""
+    cats = list(cols) if cols is not None else _cat_cols(df)[:4]
     findings = []
-    for col in cats[:4]:
+    for col in cats:
         vc = df[col].value_counts()
+        if vc.empty:          # column has no values at all
+            continue
         total = vc.sum()
         top_pct = round(vc.iloc[0]/total*100,1)
         concentration = "High 🔴" if top_pct>50 else "Medium 🟡" if top_pct>25 else "Low ✅"
@@ -218,7 +224,7 @@ def insights_panel(df: pd.DataFrame):
                       <div class="insight-item"><span class="insight-bullet">▸</span>Shape: <b>{f['skew_tag']}</b> (skew={f['skew']})</div>
                       <div class="insight-item"><span class="insight-bullet">▸</span>Mean: <b>{f['mean']}</b> | Std Dev: <b>{f['std']}</b></div>
                       <div class="insight-item"><span class="insight-bullet">▸</span>Range: <b>{s.min():.2f}</b> → <b>{s.max():.2f}</b></div>
-                      <div class="insight-item"><span class="insight-bullet">▸</span>Kurtosis: <b>{f['kurtosis']}</b> {'(heavy tails)' if f['kurtosis']>3 else '(normal tails)'}</div>
+                      <div class="insight-item"><span class="insight-bullet">▸</span>Kurtosis: <b>{f['kurtosis']}</b> {'(heavy tails)' if f['kurtosis']>1 else '(normal tails)'}</div>
                       <div class="insight-item"><span class="insight-bullet">▸</span>Outliers: <b>{f['outliers']}</b> beyond 1.5×IQR</div>
                       <div class="insight-item"><span class="insight-bullet">▸</span>Missing: <b>{int(df[col_select].isnull().sum())}</b> values</div>
                     </div>
@@ -313,7 +319,7 @@ def insights_panel(df: pd.DataFrame):
     # ── Tab: Categories ───────────────────────────────────────────────────────
     if cats:
         with tabs[tab_idx]:
-            cat_findings = _categorical_insights(df)
+            cat_findings = _categorical_insights(df, cats)
 
             cat_select = st.selectbox("Select categorical column", cats, key="cat_col")
             left, right = st.columns([1.6, 1])

@@ -5,8 +5,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 
 
-def _num_cols(df): return df.select_dtypes(include=np.number).columns.tolist()
-def _cat_cols(df): return df.select_dtypes(include=["object","category"]).columns.tolist()
+from components.utils import get_num_cols, get_cat_cols
+
+def _num_cols(df): return get_num_cols(df)
+def _cat_cols(df): return get_cat_cols(df)
 
 THEME = dict(
     paper_bgcolor="#0D1220", plot_bgcolor="#0D1220",

@@ -8,6 +8,7 @@ from components.charts import visualization_gallery
 from components.insights import insights_panel
 from components.decision import decision_support
 from components.utils import assess_data
+from components.report import generate_pdf
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -33,7 +34,7 @@ html, body { background-color: #070B14 !important; }
 [data-testid="stHeader"] { background-color: #070B14 !important; }
 .block-container { padding-top:0 !important; padding-left:3rem !important; padding-right:3rem !important; }
 /* Hide blank button labels */
-[data-testid="stBaseButton-secondary"] p { font-size:11px !important; color:#94A3B8 !important; }
+.stButton button[data-testid="stBaseButton-secondary"] p { color:#070B14 !important; font-size:12px !important; font-weight:700 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -142,6 +143,32 @@ if df is not None:
     visualization_gallery(df)
     insights_panel(df)
     decision_support(df)
+
+    # ── PDF report export ──
+    st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class="section-label">
+      <div class="section-label-dot"></div>
+      <span class="section-label-text">Export</span>
+    </div>
+    <div class="section-title">Download Your Report</div>
+    <div class="section-desc">A PDF summary of quality, statistics, correlations and decisions.</div>
+    """, unsafe_allow_html=True)
+
+    try:
+        pdf_bytes = generate_pdf(
+            df,
+            st.session_state.get("_decisions"),
+            st.session_state.get("_decision_score", 75),
+        )
+        st.download_button(
+            "📥 Download PDF Report",
+            data=pdf_bytes,
+            file_name="datavista_report.pdf",
+            mime="application/pdf",
+        )
+    except Exception as e:
+        st.error(f"Could not generate the PDF report: {e}")
 
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("""
