@@ -6,11 +6,13 @@ import plotly.graph_objects as go
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+from components.utils import get_num_cols, get_cat_cols
+
 def _num_cols(df):
-    return df.select_dtypes(include=np.number).columns.tolist()
+    return get_num_cols(df)
 
 def _cat_cols(df):
-    return df.select_dtypes(include=["object", "category"]).columns.tolist()
+    return get_cat_cols(df)
 
 
 def _sparkline(values: list, color: str = "#00D4FF") -> go.Figure:

@@ -5,8 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
-def _num_cols(df): return df.select_dtypes(include=np.number).columns.tolist()
-def _cat_cols(df): return df.select_dtypes(include=["object","category"]).columns.tolist()
+from components.utils import get_num_cols, get_cat_cols
+
+def _num_cols(df): return get_num_cols(df)
+def _cat_cols(df): return get_cat_cols(df)
 
 THEME = dict(
     paper_bgcolor="#0D1220", plot_bgcolor="#0D1220",
@@ -149,12 +151,12 @@ def _trend_chart(df, col):
 def _cat_chart(df, col):
     vc = df[col].value_counts().head(15).reset_index()
     vc.columns = [col, "count"]
+    vc[col] = vc[col].astype(str)
     fig = px.bar(vc, x=col, y="count", color="count",
                  color_continuous_scale=["#1E2D45","#7C3AED"])
     fig.update_layout(title=f"{col} — Value Counts", coloraxis_showscale=False, **THEME)
+    fig.update_xaxes(type="category")
     return fig
-
-
 # ── Main component ────────────────────────────────────────────────────────────
 
 def insights_panel(df: pd.DataFrame):

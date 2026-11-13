@@ -178,12 +178,24 @@ def build_heatmap(df, x_col=None, y_col=None):
     fig.update_coloraxes(colorbar=dict(tickfont=dict(color="#CBD5E1")))
     return _apply_theme(fig, "Correlation Heatmap")
 
+def _safe_size_col(df, exclude):
+    """A numeric column that is safe to use as bubble size (no negatives, not all empty)."""
+    for c in _num_cols(df):
+        if c in exclude:
+            continue
+        s = df[c].dropna()
+        if len(s) > 0 and (s >= 0).all():
+            return c
+    return None
+
 def build_scatter(df, x_col, y_col):
     cats = _cat_cols(df)
     color_col = cats[0] if cats and df[cats[0]].nunique() <= 15 else None
-    nums = _num_cols(df)
-    size_col  = next((c for c in nums if c not in [x_col,y_col]), None)
-    fig = px.scatter(df, x=x_col, y=y_col, color=color_col, size=size_col,
+    size_col = _safe_size_col(df, [x_col, y_col])
+    plot_df = df.dropna(subset=[x_col, y_col]).copy()
+    if size_col:
+        plot_df[size_col] = plot_df[size_col].fillna(plot_df[size_col].median())
+    fig = px.scatter(plot_df, x=x_col, y=y_col, color=color_col, size=size_col,
                      opacity=0.75, color_discrete_sequence=PLOTLY_THEME["colorway"])
     return _apply_theme(fig, f"{y_col} vs {x_col}")
 
@@ -197,16 +209,17 @@ def build_treemap(df, x_col, y_col):
     return _apply_theme(fig, f"{y_col} Treemap by {x_col}")
 
 def build_bubble(df, x_col, y_col):
-    nums = _num_cols(df)
     cats = _cat_cols(df)
-    size_col  = next((c for c in nums if c not in [x_col,y_col]), None)
-    color_col = cats[0] if cats and df[cats[0]].nunique()<=15 else None
+    color_col = cats[0] if cats and df[cats[0]].nunique() <= 15 else None
+    size_col = _safe_size_col(df, [x_col, y_col])
+    plot_df = df.dropna(subset=[x_col, y_col]).head(300).copy()
     if size_col:
-        fig = px.scatter(df.head(300), x=x_col, y=y_col, size=size_col,
+        plot_df[size_col] = plot_df[size_col].fillna(plot_df[size_col].median())
+        fig = px.scatter(plot_df, x=x_col, y=y_col, size=size_col,
                          color=color_col, opacity=0.75, size_max=50,
                          color_discrete_sequence=PLOTLY_THEME["colorway"])
     else:
-        fig = px.scatter(df.head(300), x=x_col, y=y_col, color=color_col,
+        fig = px.scatter(plot_df, x=x_col, y=y_col, color=color_col,
                          opacity=0.75, color_discrete_sequence=PLOTLY_THEME["colorway"])
     return _apply_theme(fig, f"Bubble: {y_col} vs {x_col}")
 
@@ -354,11 +367,17 @@ def generate_insight(chart_type, df, x_col=None, y_col=None):
             insights.append(f"**{(s.abs()>0.7).sum()}** pair(s) with |r|>0.7 — watch for multicollinearity.")
 
         elif chart_type == "Scatter" and x_col and y_col:
-            r = df[[x_col,y_col]].dropna().corr().iloc[0,1]
-            strength = "strong" if abs(r)>0.7 else "moderate" if abs(r)>0.4 else "weak"
-            insights.append(f"**{strength} {'positive' if r>0 else 'negative'}** correlation (r={r:.2f}).")
-            insights.append(f"As **{x_col}** increases, **{y_col}** tends to {'increase ↗' if r>0 else 'decrease ↘'}.")
-
+            pair = df[[x_col, y_col]].dropna()
+            r = pair.corr().iloc[0, 1]
+            rho = pair.corr(method="spearman").iloc[0, 1]
+            strength = "strong" if abs(r) > 0.7 else "moderate" if abs(r) > 0.4 else "weak"
+            if abs(r) < 0.2:
+                insights.append(f"No clear linear relationship between **{x_col}** and **{y_col}** (r={r:.2f}).")
+            else:
+                insights.append(f"**{strength} {'positive' if r > 0 else 'negative'}** correlation (r={r:.2f}).")
+                insights.append(f"As **{x_col}** increases, **{y_col}** tends to {'increase ↗' if r > 0 else 'decrease ↘'}.")
+            if abs(rho) - abs(r) > 0.3:
+                insights.append(f"Rank correlation is much higher (ρ={rho:.2f}), so outliers are likely hiding a real relationship. Clean the data and re-check.")
         elif chart_type == "Treemap" and x_col and y_col:
             agg = df.groupby(x_col)[y_col].sum().sort_values(ascending=False)
             insights.append(f"**{agg.index[0]}** is the largest segment ({agg.iloc[0]:.2f}).")

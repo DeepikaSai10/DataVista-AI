@@ -7,6 +7,7 @@ from components.kpi import kpi_dashboard
 from components.charts import visualization_gallery
 from components.insights import insights_panel
 from components.decision import decision_support
+from components.utils import assess_data
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -109,8 +110,35 @@ if df is not None:
     st.dataframe(df, use_container_width=True, height=350)
 
     # All sections
+    # Health + KPIs always show, so users can see what is wrong
     data_quality_report(df)
     kpi_dashboard(df)
+
+    # Gate: decide whether the data is safe to chart
+    check = assess_data(df)
+
+    if check["level"] == "blocked":
+        issues_md = "\n".join(f"- {i}" for i in check["issues"][:6])
+        st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
+        st.error(
+            f"🛑 **Data quality is too low to analyze reliably (score {check['score']}/100).**\n\n"
+            f"{issues_md}\n\n"
+            "Please clean these issues and re-upload your file."
+        )
+        st.stop()
+
+    if check["level"] == "warning":
+        issues_md = "\n".join(f"- {i}" for i in check["issues"][:6])
+        st.markdown("<hr class='section-divider'>", unsafe_allow_html=True)
+        st.warning(
+            f"⚠️ **Your data has quality issues that can make charts misleading:**\n\n{issues_md}\n\n"
+            "For the most reliable results, clean these and re-upload."
+        )
+        proceed_key = f"proceed_{abs(hash(tuple(df.columns)))}_{len(df)}"
+        if not st.checkbox("I understand the risks, continue anyway", key=proceed_key):
+            st.stop()
+
+    # Charts, insights and decisions only run after the gate
     visualization_gallery(df)
     insights_panel(df)
     decision_support(df)
